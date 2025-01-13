@@ -8,6 +8,10 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <unistd.h>
+#include <time.h>
+
+
+#define USER_FILE "./users"
 
 
 struct sockaddr_in setup_addr_opts(int port) {
@@ -82,8 +86,9 @@ char *parse_JSON(char *body, char find_me[10]) {
 	int key_or_value = 0;  // 0 if key, 1 if value
 	int index = 0;
 
-	// Check if string has endend
+	// Loop through all chars of the JSON
 	for (int i = 0; i < 1024; i++) {
+		// Check if string has endend
 		if (body[i] == 0x00) {
 			break;
 		}
@@ -121,13 +126,14 @@ char *parse_JSON(char *body, char find_me[10]) {
 			}
 		}
 	}
+	// Return the value from the key (find_me)
     if (strstr(find_me, key) > 0) {
             printf("%s\n", value);
             return value;
         }
 }
 
-int parse_data(char *buffer) {
+int parse_and_save(char *buffer) {
 	// Handle HTTP requests
 	// Check if it's a POST request
 	if (strstr(buffer, "POST / HTTP/1.1") != NULL) {
@@ -137,7 +143,29 @@ int parse_data(char *buffer) {
 		char *RFID = parse_JSON(body, "RFID");
 		char *weight = parse_JSON(body, "weight");
 		char *type = parse_JSON(body, "type");
-		printf("Got user and values: %s, %s, %s", RFID, weight, type);
+		printf("Got user and values: %s, %s, %s\n", RFID, weight, type);
+
+
+		// Get datetime
+		time_t t = time(NULL);
+ 		struct tm tm = *localtime(&t);
+		// Write to userfile
+		FILE *fp = fopen(USER_FILE, "a+"); // Append or create file
+		if (strstr(type, "Pap") > 0) {
+			fprintf(fp, "%s %s Pap %s Metal 0 Plastik 0 %d %d\n", RFID, "Some Name", weight, tm.tm_mday, tm.tm_mon + 1);
+		}
+		else if (strstr(type, "Metal") > 0) {
+			fprintf(fp, "%s %s Pap 0 Metal %s Plastik 0 %d %d\n", RFID, "Some Name", weight, tm.tm_mday, tm.tm_mon + 1);
+		}
+		else if (strstr(type, "Plastik") > 0) {
+			fprintf(fp, "%s %s Pap 0 Metal 0 Plastik %s %d %d\n", RFID, "Some Name", weight, tm.tm_mday, tm.tm_mon + 1);
+		}
+		else {
+			fprintf(fp, "%s %s Pap 0 Metal 0 Plastik 0 %d %d\n", RFID, "Some Name", tm.tm_mday, tm.tm_mon + 1);
+		}
+		fclose(fp);
+
+		printf("Wrote to file\n");
 
 	} else {
 		return 1;
@@ -164,7 +192,9 @@ int main() {
 		read(conn, buffer, 1024 - 1);
 
 		// Parse HTTP and JSON data
-		parse_data(buffer);
+		parse_and_save(buffer);
+
+
 
 		// Close connection
 		close(conn);
