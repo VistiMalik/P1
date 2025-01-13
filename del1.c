@@ -1,7 +1,3 @@
-// TODO: Parse JSON
-// TODO: Save to files
-// TODO: Optimize some places
-
 #include <netinet/in.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -84,6 +80,7 @@ char *parse_JSON(char *body, char find_me[10]) {
 	char key[50] = {0};
 	char *value = malloc(50);
 	int key_or_value = 0;  // 0 if key, 1 if value
+	int str_or_num = 0; // 0 if str, 1 if number  
 	int index = 0;
 
 	// Loop through all chars of the JSON
@@ -92,30 +89,22 @@ char *parse_JSON(char *body, char find_me[10]) {
 		if (body[i] == 0x00) {
 			break;
 		}
-		// Check if were
+		// Check if we enter/leave a string
 		else if (body[i] == '"') {
-			// Check if were currently in a string
+			// If we're entering update stauts, and set index to 0
 			if (in_str == 0) {
 				in_str = 1;
+				str_or_num = 0;
 				index = 0;
-			} else {
+			}
+			// If we're leaving update status and null terminate string 
+			else {
 				in_str = 0;
 				key[index] = 0x0;
 				value[index] = 0x0;
 			}
 		}
-		// Determine if it's key or value in the JSON
-		else if (body[i] == ':') {
-			key_or_value = 1;
-		} else if (body[i] == ',' && in_str != 1) {
-			if (strstr(find_me, key) > 0) {
-				printf("%s\n", value);
-				return value;
-			}
-			key_or_value = 0;
-		}
-
-		// Copy string into tmp_str
+		// If we're in a string copy it into key/value
 		else if (in_str == 1) {
 			if (key_or_value == 0) {
 				key[index] = body[i];
@@ -125,12 +114,33 @@ char *parse_JSON(char *body, char find_me[10]) {
 				index += 1;
 			}
 		}
+		// If it's a number [0-9,\-] (ascii 0-9 numbers = 0x30-0x39) copy into value
+		else if ((body[i] >= 0x30 && body[i] <= 0x39 || body[i] == '-' || body[i] == '.') && !in_str && key_or_value == 1) {
+			str_or_num = 1; 
+			value[index] = body[i];
+			index += 1;
+		}
+		// Determine if it's key or value in the JSON
+		else if (body[i] == ':') {
+			key_or_value = 1;
+			index = 0;
+		} 
+		// Check if current key-value pair has ended 
+		else if ((body[i] == ',' || body[i] == '}') && in_str != 1) {
+			// Null terminate, if the value was a int/float
+			if (str_or_num == 1) {
+				value[index] = 0x0;
+			}
+			// If the key is the one requested return the value of it
+			if (strstr(find_me, key) > 0) {
+				printf("%s\n", value);
+				return value;
+			}
+			// Reset values for next key-value pair 
+			key_or_value = 0;
+			index = 0;
+		}
 	}
-	// Return the value from the key (find_me)
-    if (strstr(find_me, key) > 0) {
-            printf("%s\n", value);
-            return value;
-        }
 }
 
 int parse_and_save(char *buffer) {
@@ -150,14 +160,14 @@ int parse_and_save(char *buffer) {
 		time_t t = time(NULL);
  		struct tm tm = *localtime(&t);
 		// Write to userfile
-		FILE *fp = fopen(USER_FILE, "a+"); // Append or create file
-		if (strstr(type, "Pap") > 0) {
+		FILE *fp = fopen(USER_FILE, "a+"); // Append to file, create if not found
+		if (strstr(type, "pap") > 0) {
 			fprintf(fp, "%s %s Pap %s Metal 0 Plastik 0 %d %d\n", RFID, "Some Name", weight, tm.tm_mday, tm.tm_mon + 1);
 		}
-		else if (strstr(type, "Metal") > 0) {
+		else if (strstr(type, "metal") > 0) {
 			fprintf(fp, "%s %s Pap 0 Metal %s Plastik 0 %d %d\n", RFID, "Some Name", weight, tm.tm_mday, tm.tm_mon + 1);
 		}
-		else if (strstr(type, "Plastik") > 0) {
+		else if (strstr(type, "plastik") > 0) {
 			fprintf(fp, "%s %s Pap 0 Metal 0 Plastik %s %d %d\n", RFID, "Some Name", weight, tm.tm_mday, tm.tm_mon + 1);
 		}
 		else {
@@ -193,8 +203,6 @@ int main() {
 
 		// Parse HTTP and JSON data
 		parse_and_save(buffer);
-
-
 
 		// Close connection
 		close(conn);
